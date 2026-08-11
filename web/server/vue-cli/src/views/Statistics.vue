@@ -133,12 +133,11 @@ const reportFilter = computed(function() {
   return store.getters.getReportFilter;
 });
 
-watch(() => tab.value, async (value, oldValue) => {
-  // Don't refresh on page reload!
-  // When the ReportFilter is loaded
-  // from the URL it will trigger refresh.
-  if (!oldValue)
-    return;
+watch(() => tab.value, async () => {
+  // FIXME: At page reload, this
+  // event triggers, but the report filter
+  // is not ready yet.
+
   if (tab.value == null) return;
 
   const currentTab = tabs[tab.value];
@@ -198,7 +197,7 @@ body {
 }
 
 .splitpanes__pane {
-  overflow-y: auto;
+  overflow-y: hidden;
   height: 100%;
 }
 
