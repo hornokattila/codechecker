@@ -64,7 +64,7 @@ from ..database import db_cleanup
 from ..database.config_db_model import Product
 from ..database.database import conv, DBSession, escape_like
 from ..database.run_db_model import \
-    AnalysisInfo, \
+    AnalysisInfo, AnalysisInfoFile, \
     AnalyzerStatistic, \
     CleanupPlan, CleanupPlanReportHash, Checker, CheckerSetItem, Comment, \
     File, FileContent, \
@@ -1932,6 +1932,20 @@ class ThriftRequestHandler:
                         analyzer, checker, enabled = chk
                         checkers[analyzer][checker] = API_AnalysisInfoChecker(
                             enabled=enabled)
+
+                    analysis_config_files = session \
+                        .query(AnalysisInfoFile.filename,
+                               FileContent.content) \
+                        .join(FileContent, AnalysisInfoFile.content_hash
+                              == FileContent.content_hash) \
+                        .filter(AnalysisInfoFile.analysis_info_id
+                                == cmd.id).all()
+
+                    # Append analysis files to the command string
+                    for filename, content in analysis_config_files:
+                        command += f"\n\n{filename}:\n"
+                        command += (zlib.decompress(content).
+                                    decode("utf-8", errors="ignore"))
 
                     res.append(ttypes.AnalysisInfo(
                         analyzerCommand=html.escape(command),
@@ -4165,7 +4179,14 @@ class ThriftRequestHandler:
             if matched_run_ids:
                 check_remove_runs_lock(session, matched_run_ids)
 
-            q = process_run_filter(session, session.query(Run), run_filter)
+            # Delete exactly the runs that were resolved and lock-checked
+            # above, not whatever the filter happens to match now. Each
+            # delete below runs in its own committed transaction, so
+            # re-running the filter here could pick up a run that didn't
+            # exist (and so wasn't lock-checked) a moment ago - e.g. a
+            # run recreated under the same name with a fresh, active lock
+            # (see #5031).
+            q = session.query(Run).filter(Run.id.in_(matched_run_ids))
 
             # q.delete(synchronize_session=False) could also be used here,
             # however, a run deletion tends to be a slow operation due to
